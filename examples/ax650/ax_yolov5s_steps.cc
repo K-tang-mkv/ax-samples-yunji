@@ -97,7 +97,7 @@ namespace ax
         AX_ENGINE_NPU_ATTR_T npu_attr;
         memset(&npu_attr, 0, sizeof(npu_attr));
         npu_attr.eHardMode = AX_ENGINE_VIRTUAL_NPU_DISABLE;
-        auto ret = AX_ENGINE_Init(&npu_attr);
+        auto ret = AX_ENGINE_Init(&npu_attr); // first step is init ENGINE
 #endif
         if (0 != ret)
         {
@@ -105,7 +105,7 @@ namespace ax
         }
 
         // 2. load model
-        std::vector<char> model_buffer;
+        std::vector<char> model_buffer; // read model file to model buffer
         if (!utilities::read_file(model, model_buffer))
         {
             fprintf(stderr, "Read Run-Joint model(%s) file failed.\n", model.c_str());
@@ -113,23 +113,28 @@ namespace ax
         }
 
         // 3. create handle
-        AX_ENGINE_HANDLE handle;
+        AX_ENGINE_HANDLE handle; // second step is create engine handle
+        // 通过 axmodel 模型文件可以创建模型推理句柄，用于获取模型 IO 等信息，执行推理任务
         ret = AX_ENGINE_CreateHandle(&handle, model_buffer.data(), model_buffer.size());
         SAMPLE_AX_ENGINE_DEAL_HANDLE
         fprintf(stdout, "Engine creating handle is done.\n");
 
         // 4. create context
-        ret = AX_ENGINE_CreateContext(handle);
+        // 可以认为 Engine 的工作是延迟生效的，在创建上下文时才真正初始化模型到 NPU，设置
+        // 这样的接口可以使用户有机会避免任务流程在一些限制条件下卡加载模型，创建更多的任务优化机会
+        ret = AX_ENGINE_CreateContext(handle); // third step is to create model context
         SAMPLE_AX_ENGINE_DEAL_HANDLE
         fprintf(stdout, "Engine creating context is done.\n");
 
         // 5. set io
+        // 通过模型句柄获取模型各个输入和输出的信息, input and output information
         AX_ENGINE_IO_INFO_T* io_info;
         ret = AX_ENGINE_GetIOInfo(handle, &io_info);
         SAMPLE_AX_ENGINE_DEAL_HANDLE
         fprintf(stdout, "Engine get io info is done. \n");
 
         // 6. alloc io
+        // prepare Input and output
         AX_ENGINE_IO_T io_data;
         ret = middleware::prepare_io(io_info, &io_data, std::make_pair(AX_ENGINE_ABST_DEFAULT, AX_ENGINE_ABST_CACHED));
         SAMPLE_AX_ENGINE_DEAL_HANDLE
@@ -141,7 +146,8 @@ namespace ax
         fprintf(stdout, "Engine push input is done. \n");
         fprintf(stdout, "--------------------------------------\n");
 
-        // 8. warn up
+        // 8. warm up
+        // pre-inference warm up
         for (int i = 0; i < 5; ++i)
         {
             AX_ENGINE_RunSync(handle, &io_data);
@@ -222,7 +228,7 @@ int main(int argc, char* argv[])
     fprintf(stdout, "--------------------------------------\n");
 
     // 2. read image & resize & transpose
-    std::vector<uint8_t> image(input_size[0] * input_size[1] * 3, 0);
+    std::vector<uint8_t> image(input_size[0] * input_size[1] * 3, 0); // H*W*C
     cv::Mat mat = cv::imread(image_file);
     if (mat.empty())
     {
